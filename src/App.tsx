@@ -11,10 +11,16 @@ const nav: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'transactions', label: 'Transaksi Stok', icon: ArrowDownToLine },
   { id: 'history', label: 'Riwayat Transaksi', icon: Archive }, { id: 'reports', label: 'Laporan Excel', icon: FileSpreadsheet },
 ]
-const formatNumber = (n: number | string | null | undefined) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(Number(n) || 0)
+const formatNumber = (n: number | string | null | undefined) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(n) || 0)
 const formatDate = (s: string) => {
-  const date = new Date(s)
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T00:00:00` : s)
   return Number.isNaN(date.getTime()) ? '-' : new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }).format(date)
+}
+const localDateString = (date: Date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 export default function App() {
@@ -66,7 +72,7 @@ export default function App() {
     <main className="lg:pl-64">
       <header className="app-header h-16 border-b px-5 md:px-8 flex items-center justify-between sticky top-0 z-20">
         <button className="lg:hidden p-2 rounded-lg hover:bg-slate-100" onClick={() => setSidebar(true)}><Menu size={22} /></button>
-        <div className="hidden lg:block"><p className="text-sm text-slate-400">Kamis, 15 Oktober 2026</p><h2 className="text-lg font-bold text-ink">{nav.find(n => n.id === page)?.label}</h2></div>
+        <div className="hidden lg:block"><p className="text-sm text-slate-400">{new Intl.DateTimeFormat('id-ID', { dateStyle: 'full' }).format(new Date())}</p><h2 className="text-lg font-bold text-ink">{nav.find(n => n.id === page)?.label}</h2></div>
         <div className="flex items-center gap-3 ml-auto"><button className="theme-toggle" aria-label="Ubah tema" onClick={() => setDarkMode(v => !v)}>{darkMode ? <Sun size={18} /> : <Moon size={18} />}</button><div className="text-right hidden sm:block"><p className="text-sm font-semibold">Admin Inventaris</p><p className="text-xs text-slate-400">Administrator</p></div><div className="h-9 w-9 rounded-full bg-teal-100 text-teal-700 grid place-items-center"><UserRound size={17} /></div></div>
       </header>
       <div className="p-5 md:p-8 max-w-[1600px] mx-auto">{page === 'dashboard' && <Dashboard items={items} transactions={transactions} />}{page === 'items' && <Items items={items} transactions={transactions} setItems={setItems} />}{page === 'transactions' && <TransactionsPage items={items} setItems={setItems} setTransactions={setTransactions} />}{page === 'history' && <History transactions={transactions} />}{page === 'reports' && <Reports items={items} transactions={transactions} />}</div>
@@ -141,12 +147,14 @@ function TransactionsPage({ items, setItems, setTransactions }: { items: Item[];
 }
 
 function TransactionForm({ type, items, setItems, setTransactions }: { type: TransactionType; items: Item[]; setItems: React.Dispatch<React.SetStateAction<Item[]>>; setTransactions: React.Dispatch<React.SetStateAction<Transaction[]>> }) {
-  const [form, setForm] = useState({ transaction_date: new Date().toISOString().slice(0, 10), item_id: '', quantity: 1, initials: '', recipient: '' })
+  const [form, setForm] = useState({ transaction_date: localDateString(new Date()), item_id: '', quantity: 0, initials: '', recipient: '' })
+  const [itemQuery, setItemQuery] = useState('')
   const item = items.find(i => i.id === form.item_id)
   const update = (key: string, value: string | number) => setForm(v => ({ ...v, [key]: value }))
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!item) return alert('Pilih barang terlebih dahulu.')
+    if (!Number.isInteger(Number(form.quantity)) || Number(form.quantity) <= 0) return alert('Jumlah transaksi harus berupa bilangan bulat lebih besar dari nol.')
     if (type === 'out' && Number(form.quantity) > item.current_stock) return alert('Stok tidak mencukupi untuk transaksi ini.')
     const balance = type === 'in' ? item.current_stock + Number(form.quantity) : item.current_stock - Number(form.quantity)
     const { data, error } = await supabase.rpc('record_stock_transaction', { p_item_id: item.id, p_type: type, p_quantity: Number(form.quantity), p_date: form.transaction_date, p_officer: 'Admin Inventaris', p_initials: form.initials || null, p_recipient: form.recipient || null })
@@ -154,19 +162,29 @@ function TransactionForm({ type, items, setItems, setTransactions }: { type: Tra
     if (data) setTransactions(v => [data as Transaction, ...v])
     setItems(v => v.map(i => i.id === item.id ? { ...i, current_stock: balance } : i))
     alert('Transaksi berhasil disimpan dan stok diperbarui.')
-    setForm(v => ({ ...v, item_id: '', quantity: 1, recipient: '', initials: '' }))
+    setForm(v => ({ ...v, item_id: '', quantity: 0, recipient: '', initials: '' }))
+    setItemQuery('')
   }
-  return <section className={`card p-5 border-t-4 ${type === 'in' ? 'border-t-teal-600' : 'border-t-orange-500'}`}><div className="mb-5 flex items-center gap-3"><div className={`stat-icon ${type === 'in' ? 'teal' : 'orange'}`}>{type === 'in' ? <ArrowDownToLine size={20} /> : <ArrowUpFromLine size={20} />}</div><div><h2 className="section-title">Barang {type === 'in' ? 'Masuk' : 'Keluar'}</h2><p className="text-xs text-slate-400 mt-1">{type === 'in' ? 'Tambah stok barang' : 'Kurangi stok barang'}</p></div></div><form onSubmit={save} className="space-y-4"><label>Tanggal<input type="date" required value={form.transaction_date} onChange={e => update('transaction_date', e.target.value)} /></label><label>Nama barang<input list={`items-${type}`} required value={item ? `${item.code} — ${item.name}` : ''} onChange={e => { const selected = items.find(i => `${i.code} — ${i.name}` === e.target.value); update('item_id', selected?.id || '') }} placeholder="Pilih barang" /><datalist id={`items-${type}`}>{items.map(i => <option key={i.id} value={`${i.code} — ${i.name}`} />)}</datalist></label><label>Satuan<input readOnly value={item?.unit || 'Otomatis terisi'} /></label>{type === 'out' && <label>Penunjukan / nama orang yang meminta barang<input required value={form.recipient} onChange={e => update('recipient', e.target.value)} /></label>}<label>{type === 'in' ? 'Jumlah tambah' : 'Jumlah kurang'}<input type="number" min="0.01" step="0.01" required value={form.quantity} onChange={e => update('quantity', Number(e.target.value))} /></label><label>Paraf<input required value={form.initials} onChange={e => update('initials', e.target.value)} /></label><div className="flex justify-end pt-2"><button className="btn-primary"><Download size={16} />Simpan {type === 'in' ? 'barang masuk' : 'barang keluar'}</button></div></form></section>
+  return <section className={`card p-5 border-t-4 ${type === 'in' ? 'border-t-teal-600' : 'border-t-orange-500'}`}><div className="mb-5 flex items-center gap-3"><div className={`stat-icon ${type === 'in' ? 'teal' : 'orange'}`}>{type === 'in' ? <ArrowDownToLine size={20} /> : <ArrowUpFromLine size={20} />}</div><div><h2 className="section-title">Barang {type === 'in' ? 'Masuk' : 'Keluar'}</h2><p className="text-xs text-slate-400 mt-1">{type === 'in' ? 'Tambah stok barang' : 'Kurangi stok barang'}</p></div></div><form onSubmit={save} className="space-y-4"><label>Tanggal<input type="date" required value={form.transaction_date} onChange={e => update('transaction_date', e.target.value)} /></label><label>Nama barang<input list={`items-${type}`} required value={itemQuery} onChange={e => { const value = e.target.value; setItemQuery(value); const selected = items.find(i => `${i.code} — ${i.name}` === value); update('item_id', selected?.id || '') }} placeholder={items.length ? 'Ketik atau pilih barang' : 'Belum ada data barang'} /><datalist id={`items-${type}`}>{items.map(i => <option key={i.id} value={`${i.code} — ${i.name}`} />)}</datalist></label><label>Satuan<input readOnly value={item?.unit || 'Otomatis terisi'} /></label>{type === 'out' && <label>Penunjukan / nama orang yang meminta barang<input required value={form.recipient} onChange={e => update('recipient', e.target.value)} /></label>}<label>{type === 'in' ? 'Jumlah tambah' : 'Jumlah kurang'}<input type="number" min="1" step="1" required value={form.quantity} onChange={e => update('quantity', Number(e.target.value))} /></label><label>Paraf<input required value={form.initials} onChange={e => update('initials', e.target.value)} /></label><div className="flex justify-end pt-2"><button className="btn-primary"><Download size={16} />Simpan {type === 'in' ? 'barang masuk' : 'barang keluar'}</button></div></form></section>
 }
 
 function History({ transactions }: { transactions: Transaction[] }) {
   const [query, setQuery] = useState('')
-  const filtered = transactions.filter(t => `${t.item?.code} ${t.item?.name} ${t.recipient || ''}`.toLowerCase().includes(query.toLowerCase()))
-  return <><div className="mb-6"><p className="eyebrow">AKTIVITAS</p><h1 className="title">Riwayat Transaksi</h1><p className="subtitle">Semua pergerakan stok tercatat secara permanen.</p></div><div className="card p-4 mb-5 flex gap-3"><div className="search"><Search size={17} /><input placeholder="Cari transaksi..." value={query} onChange={e => setQuery(e.target.value)} /></div><button className="btn-secondary">Filter tanggal</button><button className="btn-secondary">Semua jenis</button></div><div className="card p-5 overflow-x-auto"><table><thead><tr><th>Tanggal</th><th>Jenis</th><th>Barang</th><th>Penerima / sumber</th><th>Jumlah</th><th>Sisa stok</th><th>Petugas</th></tr></thead><tbody>{filtered.length ? filtered.map(t => <tr key={t.id}><td>{formatDate(t.transaction_date)}</td><td><span className={`badge ${t.type === 'in' ? 'bg-teal-50 text-teal-700' : 'bg-orange-50 text-orange-600'}`}>{t.type === 'in' ? 'Masuk' : 'Keluar'}</span></td><td><b>{t.item?.code}</b><br /><span className="text-xs text-slate-400">{t.item?.name}</span></td><td>{t.recipient || t.source || '-'}</td><td className="font-semibold">{t.type === 'in' ? '+' : '-'}{formatNumber(t.quantity)} {t.item?.unit}</td><td>{formatNumber(t.balance_after)} {t.item?.unit}</td><td>{t.officer_name}</td></tr>) : <tr><td colSpan={7} className="text-center py-10 text-slate-400">Belum ada transaksi tersimpan.</td></tr>}</tbody></table></div></>
+  const today = localDateString(new Date())
+  const [startDate, setStartDate] = useState(`${today.slice(0, 8)}01`)
+  const [endDate, setEndDate] = useState(today)
+  const [typeFilter, setTypeFilter] = useState<'all' | TransactionType>('all')
+  const filtered = transactions.filter(t => {
+    const matchesQuery = `${t.item?.code} ${t.item?.name} ${t.recipient || ''} ${t.source || ''}`.toLowerCase().includes(query.toLowerCase())
+    const matchesDate = t.transaction_date >= startDate && t.transaction_date <= endDate
+    const matchesType = typeFilter === 'all' || t.type === typeFilter
+    return matchesQuery && matchesDate && matchesType
+  })
+  return <><div className="mb-6"><p className="eyebrow">AKTIVITAS</p><h1 className="title">Riwayat Transaksi</h1><p className="subtitle">Semua pergerakan stok tercatat secara permanen.</p></div><div className="card p-4 mb-5 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto_auto] md:items-end"><div className="search"><Search size={17} /><input placeholder="Cari transaksi..." value={query} onChange={e => setQuery(e.target.value)} /></div><label>Dari<input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></label><label>Sampai<input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></label><label>Jenis<select value={typeFilter} onChange={e => setTypeFilter(e.target.value as 'all' | TransactionType)}><option value="all">Semua jenis</option><option value="in">Barang masuk</option><option value="out">Barang keluar</option></select></label></div><div className="card p-5 overflow-x-auto"><table><thead><tr><th>Tanggal</th><th>Jenis</th><th>Barang</th><th>Penerima / sumber</th><th>Jumlah</th><th>Sisa stok</th><th>Petugas</th></tr></thead><tbody>{filtered.length ? filtered.map(t => <tr key={t.id}><td>{formatDate(t.transaction_date)}</td><td><span className={`badge ${t.type === 'in' ? 'bg-teal-50 text-teal-700' : 'bg-orange-50 text-orange-600'}`}>{t.type === 'in' ? 'Masuk' : 'Keluar'}</span></td><td><b>{t.item?.code}</b><br /><span className="text-xs text-slate-400">{t.item?.name}</span></td><td>{t.recipient || t.source || '-'}</td><td className="font-semibold">{t.type === 'in' ? '+' : '-'}{formatNumber(t.quantity)} {t.item?.unit}</td><td>{formatNumber(t.balance_after)} {t.item?.unit}</td><td>{t.officer_name}</td></tr>) : <tr><td colSpan={7} className="text-center py-10 text-slate-400">Belum ada transaksi tersimpan.</td></tr>}</tbody></table></div></>
 }
 
 function Reports({ items, transactions }: { items: Item[]; transactions: Transaction[] }) {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localDateString(new Date())
   const [startDate, setStartDate] = useState(`${today.slice(0, 8)}01`)
   const [endDate, setEndDate] = useState(today)
   const [itemId, setItemId] = useState('all')
@@ -192,10 +210,9 @@ function Reports({ items, transactions }: { items: Item[]; transactions: Transac
   const rows = getRows()
   const exportExcel = () => {
     if (startDate > endDate) return alert('Tanggal mulai tidak boleh setelah tanggal akhir.')
-    const data = [['BUKU PERSEDIAAN BARANG ATK'], [`Periode: ${startDate} s.d. ${endDate}`], [], ['Indeks', 'Satuan', 'Nama Barang', 'Tngl.', 'Penunjukan', 'Tambah', 'Kurang', 'Sisa', 'Parap'], ...rows.map(row => [row.item.code, row.item.unit, row.item.name, row.date, row.description, row.add || '', row.subtract || '', row.balance, row.initials])]
+    const data = [['Indeks', 'Satuan', 'Nama Barang', 'Tambah', 'Kurang', 'Sisa'], ...rows.map(row => [row.item.code, row.item.unit, row.item.name, row.add ? Math.round(row.add) : '', row.subtract ? Math.round(row.subtract) : '', Math.round(row.balance)])]
     const sheet = XLSX.utils.aoa_to_sheet(data)
-    sheet['!cols'] = [{ wch: 14 }, { wch: 12 }, { wch: 28 }, { wch: 14 }, { wch: 28 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }]
-    sheet['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 8 } }]
+    sheet['!cols'] = [{ wch: 14 }, { wch: 12 }, { wch: 28 }, { wch: 12 }, { wch: 12 }, { wch: 12 }]
     const book = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(book, sheet, 'Buku Persediaan')
     try {
@@ -214,7 +231,7 @@ function Reports({ items, transactions }: { items: Item[]; transactions: Transac
       alert('Laporan gagal diunduh. Periksa izin unduhan browser lalu coba lagi.')
     }
   }
-  return <><div className="mb-6"><p className="eyebrow">LAPORAN INVENTARIS</p><h1 className="title">Buku Persediaan ATK</h1><p className="subtitle">Pilih periode dan barang, lalu export laporan dalam format buku persediaan fisik.</p></div><div className="card p-5 mb-6"><div className="grid gap-4 md:grid-cols-3 md:items-end"><label>Tanggal mulai<input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></label><label>Tanggal akhir<input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></label><label>Barang<input list="report-items" value={itemSearch} onChange={e => { const value = e.target.value; setItemSearch(value); const selected = items.find(item => `${item.code} — ${item.name}` === value); setItemId(selected?.id || (value === 'Semua barang' ? 'all' : '')) }} placeholder="Ketik kode atau nama barang..." /><datalist id="report-items"><option value="Semua barang" />{items.map(item => <option key={item.id} value={`${item.code} — ${item.name}`} />)}</datalist></label></div><div className="mt-5 flex justify-end"><button className="btn-primary" onClick={exportExcel}><FileSpreadsheet size={16} />Export Excel</button></div></div><div className="card p-5 overflow-x-auto"><div className="mb-4"><h3 className="section-title">Pratinjau buku persediaan</h3><p className="text-xs text-slate-400 mt-1">Saldo awal periode tetap ditampilkan sebelum transaksi pada periode terpilih.</p></div><table><thead><tr><th>Indeks</th><th>Satuan</th><th>Nama Barang</th><th>Tngl.</th><th>Penunjukan</th><th>Tambah</th><th>Kurang</th><th>Sisa</th><th>Parap</th></tr></thead><tbody>{rows.length ? rows.map((row, index) => <tr key={`${row.item.id}-${row.date}-${index}`}><td className="font-mono text-xs text-teal-700">{row.item.code}</td><td>{row.item.unit}</td><td className="font-semibold text-slate-700">{row.item.name}</td><td>{formatDate(row.date)}</td><td>{row.description}</td><td>{row.add || '-'}</td><td>{row.subtract || '-'}</td><td className="font-semibold">{formatNumber(row.balance)}</td><td>{row.initials}</td></tr>) : <tr><td colSpan={9} className="py-10 text-center text-slate-400">Belum ada data untuk pilihan laporan.</td></tr>}</tbody></table></div></>
+  return <><div className="mb-6"><p className="eyebrow">LAPORAN INVENTARIS</p><h1 className="title">Buku Persediaan ATK</h1><p className="subtitle">Pilih periode dan barang, lalu export laporan dalam format buku persediaan fisik.</p></div><div className="card p-5 mb-6"><div className="grid gap-4 md:grid-cols-3 md:items-end"><label>Tanggal mulai<input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></label><label>Tanggal akhir<input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></label><label>Barang<input list="report-items" value={itemSearch} onChange={e => { const value = e.target.value; setItemSearch(value); const selected = items.find(item => `${item.code} — ${item.name}` === value); setItemId(selected?.id || (value === 'Semua barang' ? 'all' : '')) }} placeholder="Ketik kode atau nama barang..." /><datalist id="report-items"><option value="Semua barang" />{items.map(item => <option key={item.id} value={`${item.code} — ${item.name}`} />)}</datalist></label></div><div className="mt-5 flex justify-end"><button className="btn-primary" onClick={exportExcel}><FileSpreadsheet size={16} />Export Excel</button></div></div><div className="card p-5 overflow-x-auto"><div className="mb-4"><h3 className="section-title">Pratinjau buku persediaan</h3><p className="text-xs text-slate-400 mt-1">Saldo awal periode tetap ditampilkan sebelum transaksi pada periode terpilih.</p></div><table><thead><tr><th>Indeks</th><th>Satuan</th><th>Nama Barang</th><th>Tambah</th><th>Kurang</th><th>Sisa</th></tr></thead><tbody>{rows.length ? rows.map((row, index) => <tr key={`${row.item.id}-${row.date}-${index}`}><td className="font-mono text-xs text-teal-700">{row.item.code}</td><td>{row.item.unit}</td><td className="font-semibold text-slate-700">{row.item.name}</td><td>{row.add ? formatNumber(row.add) : '-'}</td><td>{row.subtract ? formatNumber(row.subtract) : '-'}</td><td className="font-semibold">{formatNumber(row.balance)}</td></tr>) : <tr><td colSpan={6} className="py-10 text-center text-slate-400">Belum ada data untuk pilihan laporan.</td></tr>}</tbody></table></div></>
 }
 
 function ReportPreview({ kind, items, transactions, close, download }: { kind: string; items: Item[]; transactions: Transaction[]; close: () => void; download: (kind: string) => void }) {
