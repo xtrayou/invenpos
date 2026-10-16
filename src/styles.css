@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@layer base {
+  body { @apply antialiased; font-family: "Nunito Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f4f6f9; }
+  label { @apply block text-sm font-medium text-slate-600; }
+  input, select, textarea { @apply mt-2 w-full rounded-md border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100; }
+  textarea { min-height: 84px; resize: vertical; }
+}
+@layer components {
+  .app-shell { background: #f4f6f9; }
+  .app-header { background: #fff; border-color: #dce2ea; }
+  .card { @apply rounded-lg border border-slate-200 bg-white; box-shadow: 0 1px 3px rgba(15, 35, 65, .05); }
+  .nav-item { @apply flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-800; }
+  .nav-item.active { @apply bg-teal-50 text-teal-700; }
+  .btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-md bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:opacity-60; }
+  .btn-secondary { @apply inline-flex items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50; }
+  .title { @apply mt-1 text-2xl font-bold tracking-tight text-ink md:text-3xl; }
+  .subtitle { @apply mt-1 text-sm text-slate-500; }
+  .eyebrow { @apply text-[11px] font-bold tracking-[.16em] text-teal-600; }
+  .section-title { @apply text-base font-bold text-ink; }
+  .stat-icon { @apply grid h-10 w-10 place-items-center rounded-lg; }
+  .stat-icon.blue { @apply bg-blue-50 text-blue-600; } .stat-icon.teal { @apply bg-teal-50 text-teal-600; } .stat-icon.violet { @apply bg-violet-50 text-violet-600; } .stat-icon.orange { @apply bg-orange-50 text-orange-600; }
+  .badge { @apply inline-flex rounded-full px-2.5 py-1 text-xs font-semibold; }
+  .search { @apply flex flex-1 items-center gap-2 rounded-lg border border-slate-200 px-3 text-slate-400; } .search input { @apply mt-0 border-0 px-0 focus:ring-0; }
+  .theme-toggle { @apply inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100; }
+  table { @apply w-full min-w-[680px] text-left text-sm; } th { @apply border-b border-slate-100 px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400; } td { @apply border-b border-slate-50 px-3 py-3.5 text-slate-500; }
+}
+
+.dark body { background: #101b2d; }
+.dark .app-shell { background: #101b2d; color: #e5e7eb; }
+.dark .app-header, .dark aside, .dark .card { background: #17263d; border-color: #2b3b54; }
+.dark .nav-item { color: #aebbd0; }
+.dark .nav-item:hover { background: #223652; color: #fff; }
+.dark .nav-item.active { background: #243d63; color: #b9d3ff; }
+.dark .theme-toggle, .dark .btn-secondary { background: #17263d; border-color: #3a4c67; color: #d5dfed; }
+.dark input, .dark select, .dark textarea { background: #111e32; border-color: #3a4c67; color: #e5e7eb; }
+.dark table th { border-color: #2b3b54; color: #9eacc1; }
+.dark table td { border-color: #25364e; color: #b9c5d6; }
+.dark .text-ink, .dark .section-title, .dark .title { color: #f1f5f9; }
+.dark .text-slate-800, .dark .text-slate-700 { color: #e5e7eb; }
+.dark .text-slate-500, .dark .text-slate-400 { color: #aebbd0; }

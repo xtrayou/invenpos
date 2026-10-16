@@ -8,10 +8,10 @@ Sistem informasi inventaris alat tulis kantor berbasis React, TypeScript, Vite, 
 2. Jalankan `npm install`.
 3. Salin `.env.example` menjadi `.env.local`, lalu isi URL project Supabase dan **anon key** (bukan service-role key).
 4. Buka SQL Editor Supabase dan jalankan [`supabase/schema.sql`](./supabase/schema.sql).
-5. Buat akun admin dari Supabase Dashboard (Authentication > Users). Tidak ada registrasi publik.
+5. Buat akun admin dari Supabase Dashboard (Authentication > Users). Tidak ada registrasi publik dan tidak ada akun demo lokal.
 6. Jalankan `npm run dev`.
 
-Jika environment Supabase belum diisi, aplikasi tetap dapat dibuka dalam mode pratinjau lokal menggunakan data contoh; operasi yang tersimpan ke database aktif setelah environment dikonfigurasi.
+Environment Supabase wajib diisi agar aplikasi dapat digunakan.
 
 ## Deployment Vercel
 
