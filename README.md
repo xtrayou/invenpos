@@ -1,4 +1,4 @@
-# ATK Insight
+# INVENTARIS ATK 
 
 Sistem informasi inventaris alat tulis kantor berbasis React, TypeScript, Vite, Tailwind CSS, Supabase, Recharts, dan SheetJS.
 
