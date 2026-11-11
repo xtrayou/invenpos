@@ -62,3 +62,106 @@ begin
 end; $$;
 revoke execute on function public.record_stock_transaction(uuid, transaction_type, numeric, date, text, text, text, text, text, text, text) from public;
 grant execute on function public.record_stock_transaction(uuid, transaction_type, numeric, date, text, text, text, text, text, text, text) to authenticated;
+
+-- Fungsi pencatatan transaksi batch untuk banyak barang dalam satu transaksi
+create or replace function public.record_stock_transactions_batch(
+  p_type transaction_type,
+  p_date date,
+  p_officer text,
+  p_initials text default null,
+  p_recipient text default null,
+  p_source text default null,
+  p_department text default null,
+  p_purpose text default null,
+  p_notes text default null,
+  p_items jsonb default '[]'::jsonb
+)
+returns setof public.stock_transactions language plpgsql security definer set search_path = public as $$
+declare
+  v_item record;
+  v_stock numeric;
+  v_balance numeric;
+  v_tx public.stock_transactions;
+begin
+  if jsonb_array_length(p_items) = 0 then
+    raise exception 'Daftar barang tidak boleh kosong';
+  end if;
+
+  for v_item in select * from jsonb_to_recordset(p_items) as x(item_id uuid, quantity numeric, notes text) loop
+    if v_item.quantity <= 0 then
+      raise exception 'Jumlah transaksi harus lebih besar dari nol';
+    end if;
+
+    select current_stock into v_stock from public.items where id = v_item.item_id for update;
+    if not found then
+      raise exception 'Barang dengan ID % tidak ditemukan', v_item.item_id;
+    end if;
+
+    v_balance := case when p_type = 'in' then v_stock + v_item.quantity else v_stock - v_item.quantity end;
+    if v_balance < 0 then
+      raise exception 'Stok tidak mencukupi untuk barang %', v_item.item_id;
+    end if;
+
+    update public.items set current_stock = v_balance, updated_at = now() where id = v_item.item_id;
+
+    insert into public.stock_transactions(
+      transaction_date, type, item_id, quantity, balance_after,
+      recipient, source, department, purpose, officer_name, initials, notes, created_by
+    )
+    values (
+      p_date, p_type, v_item.item_id, v_item.quantity, v_balance,
+      p_recipient, p_source, p_department, p_purpose, p_officer, p_initials,
+      coalesce(v_item.notes, p_notes), auth.uid()
+    )
+    returning * into v_tx;
+
+    insert into public.audit_logs(actor_id, action, entity, entity_id, metadata)
+    values(auth.uid(), 'create', 'stock_transaction', v_tx.id, jsonb_build_object('type', p_type, 'quantity', v_item.quantity));
+
+    return next v_tx;
+  end loop;
+
+  return;
+end;
+$$;
+
+revoke execute on function public.record_stock_transactions_batch(transaction_type, date, text, text, text, text, text, text, text, jsonb) from public;
+grant execute on function public.record_stock_transactions_batch(transaction_type, date, text, text, text, text, text, text, text, jsonb) to authenticated;
+
+-- Fungsi hapus transaksi yang menjaga konsistensi stok secara aman
+create or replace function public.delete_stock_transaction(p_transaction_id uuid)
+returns public.items language plpgsql security definer set search_path = public as $$
+declare
+  v_tx public.stock_transactions;
+  v_stock numeric;
+  v_new_stock numeric;
+  v_item public.items;
+begin
+  select * into v_tx from public.stock_transactions where id = p_transaction_id for update;
+  if not found then
+    raise exception 'Transaksi tidak ditemukan';
+  end if;
+
+  select current_stock into v_stock from public.items where id = v_tx.item_id for update;
+  if not found then
+    raise exception 'Barang terkait tidak ditemukan';
+  end if;
+
+  v_new_stock := case when v_tx.type = 'in' then v_stock - v_tx.quantity else v_stock + v_tx.quantity end;
+  if v_new_stock < 0 then
+    raise exception 'Tidak dapat membatalkan transaksi ini karena stok saat ini (% unit) kurang dari jumlah yang dibatalkan (% unit)', v_stock, v_tx.quantity;
+  end if;
+
+  update public.items set current_stock = v_new_stock, updated_at = now() where id = v_tx.item_id returning * into v_item;
+  delete from public.stock_transactions where id = p_transaction_id;
+
+  insert into public.audit_logs(actor_id, action, entity, entity_id, metadata)
+  values(auth.uid(), 'delete', 'stock_transaction', p_transaction_id, jsonb_build_object('type', v_tx.type, 'quantity', v_tx.quantity));
+
+  return v_item;
+end;
+$$;
+
+revoke execute on function public.delete_stock_transaction(uuid) from public;
+grant execute on function public.delete_stock_transaction(uuid) to authenticated;
+
