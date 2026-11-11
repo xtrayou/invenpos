@@ -183,6 +183,20 @@ export default function App() {
   const [sidebar, setSidebar] = useState(false)
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('atk-theme') === 'dark')
 
+  // --- Draft state diangkat ke App agar tidak hilang saat navigasi (persistent draft) ---
+  const [txDraftHeaderIn, setTxDraftHeaderIn] = useState({
+    transaction_date: localDateString(new Date()),
+    recipient: '',
+    initials: ''
+  })
+  const [txDraftItemsIn, setTxDraftItemsIn] = useState<DraftTransactionItem[]>([])
+  const [txDraftHeaderOut, setTxDraftHeaderOut] = useState({
+    transaction_date: localDateString(new Date()),
+    recipient: '',
+    initials: ''
+  })
+  const [txDraftItemsOut, setTxDraftItemsOut] = useState<DraftTransactionItem[]>([])
+
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode)
     localStorage.setItem('atk-theme', darkMode ? 'dark' : 'light')
@@ -308,7 +322,7 @@ export default function App() {
 
   return (
     <div className="app-shell min-h-screen text-slate-800">
-      <Sidebar page={page} setPage={setPage} open={sidebar} close={() => setSidebar(false)} onLogout={logout} />
+      <Sidebar page={page} setPage={setPage} open={sidebar} close={() => setSidebar(false)} onLogout={logout} draftCount={txDraftItemsIn.length + txDraftItemsOut.length} />
       <main className="lg:pl-64">
         <header className="app-header h-16 border-b px-5 md:px-8 flex items-center justify-between sticky top-0 z-20">
           <button className="lg:hidden p-2 rounded-lg hover:bg-slate-100" onClick={() => setSidebar(true)}>
@@ -332,6 +346,29 @@ export default function App() {
         </header>
 
         <div className="p-5 md:p-8 max-w-[1600px] mx-auto">
+          {/* Banner draft aktif — tampil saat user di halaman lain tapi masih ada item di keranjang */}
+          {page !== 'transactions' && (txDraftItemsIn.length + txDraftItemsOut.length) > 0 && (
+            <div className="mb-5 flex items-center gap-3 p-3.5 pl-4 bg-amber-50 border border-amber-300 rounded-xl shadow-sm">
+              <span className="h-8 w-8 rounded-full bg-amber-200 text-amber-900 grid place-items-center shrink-0 text-sm">
+                🛒
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-amber-900">Ada draft transaksi yang belum disimpan</p>
+                <p className="text-xs text-amber-700">
+                  {txDraftItemsIn.length > 0 && `Barang Masuk: ${txDraftItemsIn.length} item`}
+                  {txDraftItemsIn.length > 0 && txDraftItemsOut.length > 0 && ' • '}
+                  {txDraftItemsOut.length > 0 && `Barang Keluar: ${txDraftItemsOut.length} item`}
+                </p>
+              </div>
+              <button
+                onClick={() => setPage('transactions')}
+                className="shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-500 text-amber-900 transition"
+              >
+                Lanjutkan →
+              </button>
+            </div>
+          )}
+
           {page === 'dashboard' && (
             <Dashboard
               items={items}
@@ -343,7 +380,10 @@ export default function App() {
             />
           )}
           {page === 'items' && <Items items={items} transactions={transactions} setItems={setItems} />}
-          {page === 'transactions' && (
+
+          {/* TransactionsPage selalu ter-mount (tidak di-unmount saat pindah halaman)
+              agar draft keranjang & form tidak hilang. Disembunyikan via CSS. */}
+          <div style={{ display: page === 'transactions' ? undefined : 'none' }}>
             <TransactionsPage
               items={items}
               setItems={setItems}
@@ -352,8 +392,17 @@ export default function App() {
               initialItemId={transactionItemId}
               onClearInitialItemId={() => setTransactionItemId(null)}
               onDeleteTransaction={handleDeleteTransaction}
+              headerIn={txDraftHeaderIn}
+              setHeaderIn={setTxDraftHeaderIn}
+              draftIn={txDraftItemsIn}
+              setDraftIn={setTxDraftItemsIn}
+              headerOut={txDraftHeaderOut}
+              setHeaderOut={setTxDraftHeaderOut}
+              draftOut={txDraftItemsOut}
+              setDraftOut={setTxDraftItemsOut}
             />
-          )}
+          </div>
+
           {page === 'history' && <History transactions={transactions} />}
           {page === 'reports' && <Reports items={items} transactions={transactions} />}
         </div>
@@ -426,7 +475,7 @@ function Login({ configurationError = false }: { configurationError?: boolean })
   )
 }
 
-function Sidebar({ page, setPage, open, close, onLogout }: { page: Page; setPage: (p: Page) => void; open: boolean; close: () => void; onLogout: () => void }) {
+function Sidebar({ page, setPage, open, close, onLogout, draftCount }: { page: Page; setPage: (p: Page) => void; open: boolean; close: () => void; onLogout: () => void; draftCount: number }) {
   return (
     <>
       <div className={`fixed inset-0 bg-slate-900/30 z-30 lg:hidden ${open ? '' : 'hidden'}`} onClick={close} />
@@ -443,7 +492,12 @@ function Sidebar({ page, setPage, open, close, onLogout }: { page: Page; setPage
           {nav.map(({ id, label, icon: Icon }) => (
             <button key={id} onClick={() => { setPage(id); close() }} className={`nav-item ${page === id ? 'active' : ''}`}>
               <Icon size={19} />
-              {label}
+              <span className="flex-1 text-left">{label}</span>
+              {id === 'transactions' && draftCount > 0 && (
+                <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full font-extrabold bg-amber-400 text-amber-900 leading-none">
+                  {draftCount}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -770,7 +824,15 @@ function TransactionsPage({
   setTransactions,
   initialItemId,
   onClearInitialItemId,
-  onDeleteTransaction
+  onDeleteTransaction,
+  headerIn,
+  setHeaderIn,
+  draftIn,
+  setDraftIn,
+  headerOut,
+  setHeaderOut,
+  draftOut,
+  setDraftOut
 }: {
   items: Item[]
   setItems: React.Dispatch<React.SetStateAction<Item[]>>
@@ -779,6 +841,14 @@ function TransactionsPage({
   initialItemId: string | null
   onClearInitialItemId: () => void
   onDeleteTransaction: (tx: Transaction) => void
+  headerIn: { transaction_date: string; recipient: string; initials: string }
+  setHeaderIn: React.Dispatch<React.SetStateAction<{ transaction_date: string; recipient: string; initials: string }>>
+  draftIn: DraftTransactionItem[]
+  setDraftIn: React.Dispatch<React.SetStateAction<DraftTransactionItem[]>>
+  headerOut: { transaction_date: string; recipient: string; initials: string }
+  setHeaderOut: React.Dispatch<React.SetStateAction<{ transaction_date: string; recipient: string; initials: string }>>
+  draftOut: DraftTransactionItem[]
+  setDraftOut: React.Dispatch<React.SetStateAction<DraftTransactionItem[]>>
 }) {
   const [activeTab, setActiveTab] = useState<TransactionType>('in')
   const [toasts, setToasts] = useState<Toast[]>([])
@@ -795,21 +865,6 @@ function TransactionsPage({
     setToasts(prev => prev.filter(t => t.id !== id))
   }
 
-  // Separate draft state for each tab
-  const [headerIn, setHeaderIn] = useState({
-    transaction_date: localDateString(new Date()),
-    recipient: '',
-    initials: ''
-  })
-  const [draftIn, setDraftIn] = useState<DraftTransactionItem[]>([])
-
-  const [headerOut, setHeaderOut] = useState({
-    transaction_date: localDateString(new Date()),
-    recipient: '',
-    initials: ''
-  })
-  const [draftOut, setDraftOut] = useState<DraftTransactionItem[]>([])
-
   useEffect(() => {
     if (initialItemId) {
       setActiveTab('in')
@@ -820,24 +875,24 @@ function TransactionsPage({
     <>
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
 
-      <div className="mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+      <div className="mb-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
         <div>
           <p className="eyebrow">TRANSAKSI STOK</p>
-          <h1 className="title">Barang Masuk dan Barang Keluar</h1>
-          <p className="subtitle">
+          <h1 className="title !text-xl md:!text-2xl !mt-0.5">Barang Masuk dan Barang Keluar</h1>
+          <p className="subtitle text-xs">
             Catat transaksi dalam satu kelompok per tanggal dan penunjukan. Tambahkan banyak barang sekaligus secara praktis.
           </p>
         </div>
 
         {/* User-friendly summary quick badge */}
-        <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 text-xs text-slate-500 shadow-xs self-start md:self-auto">
+        <div className="flex items-center gap-2 bg-white px-3 py-1 rounded-lg border border-slate-200 text-xs text-slate-500 shadow-xs self-start md:self-auto">
           <span className="h-2 w-2 rounded-full bg-teal-500 animate-pulse" />
           <span>Sistem Batch Aktif</span>
         </div>
       </div>
 
       {/* Modern Segmented Tab Switcher */}
-      <div className="bg-slate-200/60 p-1.5 rounded-2xl inline-flex gap-2 mb-6 max-w-full overflow-x-auto shadow-inner">
+      <div className="bg-slate-200/60 p-1 rounded-xl inline-flex gap-2 mb-4 max-w-full overflow-x-auto shadow-inner">
         <button
           type="button"
           onClick={() => setActiveTab('in')}
@@ -1046,22 +1101,54 @@ function TransactionBatchSection({
       }
     }
 
-    // Add to draft items
-    setDraftItems(prev => [
-      ...prev,
-      {
-        tempId: crypto.randomUUID(),
-        itemId: selectedItem.id,
-        item: selectedItem,
-        quantity: numQty
-      }
-    ])
+    // Jika barang yang sama sudah ada di keranjang, akumulasikan jumlahnya
+    // Penting: cek & update dilakukan di dalam functional updater agar tidak terjadi stale closure
+    let wasExisting = false
+    let finalQuantity = numQty
 
-    addToast(
-      'success',
-      'Barang Ditambahkan ke Keranjang',
-      `${selectedItem.name} (${numQty} ${selectedItem.unit})`
-    )
+    setDraftItems(prev => {
+      const existingIndex = prev.findIndex(
+        d =>
+          d.itemId === selectedItem.id ||
+          (d.item?.code && d.item.code.toLowerCase() === selectedItem.code.toLowerCase())
+      )
+
+      if (existingIndex !== -1) {
+        wasExisting = true
+        finalQuantity = prev[existingIndex].quantity + numQty
+        return prev.map((d, idx) =>
+          idx === existingIndex ? { ...d, quantity: finalQuantity } : d
+        )
+      }
+
+      // Barang belum ada di keranjang, tambahkan sebagai baris baru
+      return [
+        ...prev,
+        {
+          tempId: crypto.randomUUID(),
+          itemId: selectedItem.id,
+          item: selectedItem,
+          quantity: numQty
+        }
+      ]
+    })
+
+    // Toast ditampilkan setelah setState (nilai wasExisting/finalQuantity di-set dalam updater)
+    setTimeout(() => {
+      if (wasExisting) {
+        addToast(
+          'success',
+          'Kuantitas Barang Bertambah',
+          `"${selectedItem.name}" bertambah +${numQty} (Total sekarang: ${finalQuantity} ${selectedItem.unit}).`
+        )
+      } else {
+        addToast(
+          'success',
+          'Barang Ditambahkan ke Keranjang',
+          `${selectedItem.name} (${numQty} ${selectedItem.unit})`
+        )
+      }
+    }, 0)
 
     // Reset item input form for the next item and autofocus search
     setSelectedItemId('')
@@ -1259,82 +1346,81 @@ function TransactionBatchSection({
   const isQuantityExceeded = type === 'out' && selectedItem && Number(quantity) > remainingAvailableStock
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-6 lg:grid-cols-12 items-start">
-        {/* Left Column: Langkah 1 & Langkah 2 */}
-        <div className="lg:col-span-5 space-y-6">
-          {/* Card 1: Informasi Transaksi (Langkah 1) */}
-          <section className={`card p-5 border-t-4 transition-all duration-200 ${
-            type === 'in' ? 'border-t-teal-600' : 'border-t-orange-500'
-          }`}>
-            <div className="flex items-center gap-3 mb-4">
-              <span className={`h-7 w-7 rounded-full font-bold text-xs grid place-items-center ${
-                type === 'in' ? 'bg-teal-100 text-teal-800' : 'bg-orange-100 text-orange-800'
-              }`}>
-                1
-              </span>
-              <div>
-                <h2 className="section-title text-sm md:text-base">
-                  Informasi Kelompok Transaksi {type === 'in' ? 'Masuk' : 'Keluar'}
-                </h2>
-                <p className="text-xs text-slate-400">
-                  Diisi 1 kali untuk seluruh barang dalam kelompok ini.
-                </p>
-              </div>
-            </div>
+    <div className="space-y-4">
+      {/* Card 1: Informasi Kelompok Transaksi (Langkah 1) - Bar Horizontal Ringkas di Atas */}
+      <section className={`card p-4 border-t-4 transition-all duration-200 ${
+        type === 'in' ? 'border-t-teal-600' : 'border-t-orange-500'
+      }`}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 mb-3 border-b border-slate-100 gap-1.5">
+          <div className="flex items-center gap-2">
+            <span className={`h-6 w-6 rounded-full font-bold text-xs grid place-items-center ${
+              type === 'in' ? 'bg-teal-100 text-teal-800' : 'bg-orange-100 text-orange-800'
+            }`}>
+              1
+            </span>
+            <h2 className="section-title text-sm font-bold">
+              Informasi Kelompok Transaksi {type === 'in' ? 'Masuk' : 'Keluar'}
+            </h2>
+            <span className="text-xs text-slate-400 hidden sm:inline">
+              • Diisi 1 kali di awal untuk seluruh barang
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 text-[11px] text-teal-600 font-medium">
+            <Sparkles size={12} className="shrink-0 text-teal-500" />
+            <span>Paraf otomatis sinkron dengan penunjukan</span>
+          </div>
+        </div>
 
-            <div className="space-y-4">
-              <label>
-                Tanggal transaksi
-                <input
-                  type="date"
-                  lang="id-ID"
-                  required
-                  value={header.transaction_date}
-                  onChange={e => setHeader(prev => ({ ...prev, transaction_date: e.target.value }))}
-                />
-              </label>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label className="text-xs font-semibold text-slate-600">Tanggal transaksi</label>
+            <input
+              type="date"
+              lang="id-ID"
+              required
+              value={header.transaction_date}
+              onChange={e => setHeader(prev => ({ ...prev, transaction_date: e.target.value }))}
+              className="!mt-1 text-sm py-2 px-3"
+            />
+          </div>
 
-              <div>
-                <label>
-                  {type === 'in' ? 'Penunjukan / Sumber / Pengirim' : 'Penunjukan / Nama Pemohon'}
-                  <input
-                    required
-                    placeholder={
-                      type === 'in'
-                        ? 'Contoh: Supplier ATK / Bagian Logistik'
-                        : 'Contoh: Budi Santoso (Bagian Pelayanan)'
-                    }
-                    value={header.recipient}
-                    onChange={e => handleRecipientChange(e.target.value)}
-                  />
-                </label>
-              </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-600">
+              {type === 'in' ? 'Penunjukan / Sumber Barang' : 'Penunjukan / Nama Pemohon'}
+            </label>
+            <input
+              required
+              placeholder={
+                type === 'in'
+                  ? 'Contoh: Supplier ATK / Bagian Logistik'
+                  : 'Contoh: Budi Santoso (Bagian Pelayanan)'
+              }
+              value={header.recipient}
+              onChange={e => handleRecipientChange(e.target.value)}
+              className="!mt-1 text-sm py-2 px-3"
+            />
+          </div>
 
-              <div>
-                <label>
-                  Paraf
-                  <div className="relative">
-                    <input
-                      required
-                      placeholder="Otomatis mengikuti penunjukan"
-                      value={header.initials}
-                      onChange={e => setHeader(prev => ({ ...prev, initials: e.target.value }))}
-                    />
-                  </div>
-                </label>
-                <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-teal-600 font-medium">
-                  <Sparkles size={13} className="shrink-0 text-teal-500" />
-                  <span>Paraf otomatis sinkron dengan nama penunjukan</span>
-                </div>
-              </div>
-            </div>
-          </section>
+          <div>
+            <label className="text-xs font-semibold text-slate-600">Paraf</label>
+            <input
+              required
+              placeholder="Otomatis mengikuti penunjukan"
+              value={header.initials}
+              onChange={e => setHeader(prev => ({ ...prev, initials: e.target.value }))}
+              className="!mt-1 text-sm py-2 px-3"
+            />
+          </div>
+        </div>
+      </section>
 
-          {/* Card 2: Pilih & Tambah Barang (Langkah 2) */}
-          <section className="card p-5">
-            <div className="flex items-center gap-3 mb-4">
-              <span className={`h-7 w-7 rounded-full font-bold text-xs grid place-items-center ${
+      {/* Grid: Langkah 2 (Form Barang) & Langkah 3 (Keranjang) - Langsung Terlihat Sejajar Tanpa Perlu Scroll! */}
+      <div className="grid gap-5 lg:grid-cols-12 items-start">
+        {/* Left Column: Form Pilih & Tambah Barang Langsung di Paling Atas */}
+        <div className="lg:col-span-5">
+          <section className="card p-4 sm:p-5">
+            <div className="flex items-center gap-2.5 mb-3">
+              <span className={`h-6 w-6 rounded-full font-bold text-xs grid place-items-center ${
                 type === 'in' ? 'bg-teal-100 text-teal-800' : 'bg-orange-100 text-orange-800'
               }`}>
                 2
@@ -1347,10 +1433,10 @@ function TransactionBatchSection({
               </div>
             </div>
 
-            <form onSubmit={handleAddDraftItem} className="space-y-4">
+            <form onSubmit={handleAddDraftItem} className="space-y-3">
               <div>
-                <label>Nama barang</label>
-                <div className="relative">
+                <label className="text-xs font-semibold text-slate-600">Nama barang</label>
+                <div className="relative !mt-1">
                   <input
                     ref={itemInputRef}
                     list={`items-datalist-${type}`}
@@ -1368,7 +1454,7 @@ function TransactionBatchSection({
                       setSelectedItemId(selected?.id || '')
                     }}
                     placeholder={items.length ? 'Ketik nama atau kode barang...' : 'Belum ada data barang'}
-                    className="pr-8"
+                    className="pr-8 text-sm py-2"
                   />
                   {itemQuery && (
                     <button
@@ -1378,7 +1464,7 @@ function TransactionBatchSection({
                         setSelectedItemId('')
                         itemInputRef.current?.focus()
                       }}
-                      className="absolute right-2.5 top-[18px] text-slate-400 hover:text-slate-600"
+                      className="absolute right-2.5 top-[10px] text-slate-400 hover:text-slate-600"
                     >
                       <X size={16} />
                     </button>
@@ -1391,32 +1477,28 @@ function TransactionBatchSection({
                 </datalist>
               </div>
 
-              {/* Rich Visual Item Preview Card */}
+              {/* Compact Visual Item Preview Card */}
               {selectedItem ? (
                 <div
-                  className={`p-3.5 rounded-xl border transition-all ${
-                    type === 'in' ? 'bg-teal-50/60 border-teal-200' : 'bg-orange-50/60 border-orange-200'
+                  className={`p-2.5 rounded-lg border text-xs flex items-center justify-between ${
+                    type === 'in' ? 'bg-teal-50/70 border-teal-200' : 'bg-orange-50/70 border-orange-200'
                   }`}
                 >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-800 text-sm">{selectedItem.name}</span>
-                        <span className="font-mono text-xs px-2 py-0.5 rounded bg-white border border-slate-200 text-teal-700 font-bold">
-                          {selectedItem.code}
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-slate-500">
-                        <span>Kategori: <strong>{selectedItem.category || 'ATK'}</strong></span>
-                        <span>Satuan: <strong>{selectedItem.unit}</strong></span>
-                      </div>
+                  <div className="min-w-0 pr-2">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-white border border-slate-200 text-teal-700 font-bold shrink-0">
+                        {selectedItem.code}
+                      </span>
+                      <span className="font-bold text-slate-800 truncate">{selectedItem.name}</span>
                     </div>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Kategori: {selectedItem.category || 'ATK'} • Satuan: {selectedItem.unit}
+                    </p>
                   </div>
 
-                  <div className="mt-2.5 pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs">
-                    <span className="text-slate-500">Stok saat ini:</span>
+                  <div className="text-right shrink-0">
                     <span
-                      className={`badge font-bold ${
+                      className={`badge text-[10px] font-bold ${
                         selectedItem.current_stock === 0
                           ? 'bg-red-100 text-red-700'
                           : selectedItem.current_stock <= (selectedItem.minimum_stock || 5)
@@ -1424,40 +1506,40 @@ function TransactionBatchSection({
                           : 'bg-teal-100 text-teal-800'
                       }`}
                     >
-                      {formatNumber(selectedItem.current_stock)} {selectedItem.unit}
+                      Stok: {formatNumber(selectedItem.current_stock)} {selectedItem.unit}
                     </span>
+                    {type === 'out' && alreadyInDraftForSelectedItem > 0 && (
+                      <span className="block text-[10px] text-amber-700 mt-0.5">
+                        Di keranjang: {alreadyInDraftForSelectedItem}
+                      </span>
+                    )}
                   </div>
-
-                  {type === 'out' && alreadyInDraftForSelectedItem > 0 && (
-                    <div className="mt-1.5 flex items-center justify-between text-[11px] text-amber-700 bg-amber-50 px-2 py-1 rounded">
-                      <span>Sudah ada di keranjang:</span>
-                      <strong>{formatNumber(alreadyInDraftForSelectedItem)} {selectedItem.unit}</strong>
-                    </div>
-                  )}
                 </div>
               ) : null}
 
               {/* Satuan & Kuantitas Input with Stepper Controls */}
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 <div className="grid grid-cols-2 gap-3">
-                  <label>
-                    Satuan
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600">Satuan</label>
                     <input
                       readOnly
                       tabIndex={-1}
                       value={selectedItem?.unit || 'Otomatis'}
-                      className="bg-slate-50 cursor-not-allowed font-medium text-slate-600 border-dashed"
+                      className="!mt-1 bg-slate-50 cursor-not-allowed font-medium text-slate-600 border-dashed text-sm py-2"
                     />
-                  </label>
+                  </div>
 
                   <div>
-                    <label>{type === 'in' ? 'Jumlah tambah' : 'Jumlah kurang'}</label>
-                    <div className="flex items-center mt-2">
+                    <label className="text-xs font-semibold text-slate-600">
+                      {type === 'in' ? 'Jumlah tambah' : 'Jumlah kurang'}
+                    </label>
+                    <div className="flex items-center !mt-1">
                       <button
                         type="button"
                         onClick={() => adjustQuantity(-1)}
                         disabled={!quantity || Number(quantity) <= 1}
-                        className="h-10 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-l-md border border-r-0 border-slate-300 disabled:opacity-40 transition"
+                        className="h-[38px] px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-l-md border border-r-0 border-slate-300 disabled:opacity-40 transition"
                       >
                         <Minus size={14} />
                       </button>
@@ -1466,10 +1548,10 @@ function TransactionBatchSection({
                         min="1"
                         step="1"
                         required
-                        placeholder="Contoh: 1"
+                        placeholder="1"
                         value={quantity}
                         onChange={e => setQuantity(e.target.value === '' ? '' : Number(e.target.value))}
-                        className={`!mt-0 text-center font-bold rounded-none ${
+                        className={`!mt-0 h-[38px] text-center font-bold rounded-none ${
                           isQuantityExceeded ? 'border-red-500 bg-red-50 text-red-700' : ''
                         }`}
                       />
@@ -1477,7 +1559,7 @@ function TransactionBatchSection({
                         type="button"
                         onClick={() => adjustQuantity(1)}
                         disabled={type === 'out' && selectedItem && Number(quantity) >= remainingAvailableStock}
-                        className="h-10 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-r-md border border-l-0 border-slate-300 disabled:opacity-40 transition"
+                        className="h-[38px] px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-r-md border border-l-0 border-slate-300 disabled:opacity-40 transition"
                       >
                         <Plus size={14} />
                       </button>
@@ -1486,14 +1568,14 @@ function TransactionBatchSection({
                 </div>
 
                 {/* Quick Add Pills */}
-                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                   <span className="text-[11px] text-slate-400 mr-1">Cepat:</span>
                   {[1, 5, 10, 25].map(n => (
                     <button
                       key={n}
                       type="button"
                       onClick={() => setQuantity(n)}
-                      className="text-xs px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition"
+                      className="text-xs px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition"
                     >
                       +{n}
                     </button>
@@ -1502,7 +1584,7 @@ function TransactionBatchSection({
                     <button
                       type="button"
                       onClick={() => setQuantity(remainingAvailableStock)}
-                      className="text-xs px-2.5 py-1 rounded-md bg-orange-100 hover:bg-orange-200 text-orange-800 font-bold transition ml-auto"
+                      className="text-xs px-2 py-0.5 rounded-md bg-orange-100 hover:bg-orange-200 text-orange-800 font-bold transition ml-auto"
                       title="Isi dengan sisa stok maksimal yang tersedia"
                     >
                       Semua Sisa ({remainingAvailableStock})
@@ -1526,17 +1608,17 @@ function TransactionBatchSection({
                 )}
               </div>
 
-              <div className="pt-2">
+              <div className="pt-1.5">
                 <button
                   type="submit"
                   disabled={!selectedItem || !quantity || Number(quantity) <= 0 || isQuantityExceeded || isOutOfStockForOut}
-                  className={`btn-primary w-full py-3 text-sm font-bold shadow-sm ${
+                  className={`btn-primary w-full py-2.5 text-sm font-bold shadow-sm ${
                     type === 'in' ? '!bg-teal-600 hover:!bg-teal-700' : '!bg-orange-500 hover:!bg-orange-600'
                   }`}
                 >
                   <Plus size={16} /> Tambah Barang ke Keranjang
                 </button>
-                <p className="text-center text-[11px] text-slate-400 mt-2">
+                <p className="text-center text-[11px] text-slate-400 mt-1.5">
                   Tekan <strong>Enter</strong> untuk langsung menambahkan barang
                 </p>
               </div>
@@ -1847,7 +1929,6 @@ function TransactionBatchSection({
       <RecentGroupedPreview
         type={type}
         transactions={transactions}
-        onDeleteTransaction={onDeleteTransaction}
       />
     </div>
   )
@@ -1855,12 +1936,10 @@ function TransactionBatchSection({
 
 function RecentGroupedPreview({
   type,
-  transactions,
-  onDeleteTransaction
+  transactions
 }: {
   type: TransactionType
   transactions: Transaction[]
-  onDeleteTransaction?: (tx: Transaction) => void
 }) {
   const typeTransactions = transactions.filter(t => t.type === type)
   const groups = groupTransactions(typeTransactions).slice(0, 5) // Recent 5 transaction groups
@@ -1967,7 +2046,6 @@ function RecentGroupedPreview({
                         <th>Satuan</th>
                         <th className="text-right">Sisa Stok</th>
                         <th>Petugas</th>
-                        {onDeleteTransaction && <th>Aksi</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -1981,18 +2059,6 @@ function RecentGroupedPreview({
                           <td className="text-slate-500">{tx.item?.unit || 'Buah'}</td>
                           <td className="text-right font-medium">{formatNumber(tx.balance_after)}</td>
                           <td className="text-xs text-slate-500">{tx.officer_name}</td>
-                          {onDeleteTransaction && (
-                            <td>
-                              <button
-                                type="button"
-                                title="Batalkan transaksi ini"
-                                onClick={() => onDeleteTransaction(tx)}
-                                className="text-slate-400 hover:text-red-600 p-1.5 rounded hover:bg-red-50 transition"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </td>
-                          )}
                         </tr>
                       ))}
                     </tbody>
